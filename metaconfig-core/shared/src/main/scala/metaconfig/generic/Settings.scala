@@ -5,6 +5,7 @@ import metaconfig.ConfEncoder
 import metaconfig.annotation.DeprecatedName
 import metaconfig.internal.Cli
 import scala.annotation.StaticAnnotation
+import scala.collection.mutable
 import metaconfig.annotation.DescriptionDoc
 import org.typelevel.paiges.Doc
 import metaconfig.annotation.Description
@@ -107,6 +108,41 @@ final class Settings[T](
 object Settings {
   implicit def FieldsToSettings[T](implicit ev: Surface[T]): Settings[T] =
     apply(ev)
-  def apply[T](implicit ev: Surface[T]): Settings[T] =
-    new Settings[T](ev.fields.flatten.map(new Setting(_)), ev.annotations)
+  def apply[T](implicit ev: Surface[T]): Settings[T] = {
+    val settings = ev.fields.flatten.map(new Setting(_))
+    val errors = validate(settings)
+    if (errors.nonEmpty)
+      throw new IllegalArgumentException(
+        errors.mkString("Can't validate settings:\n", "\n", "")
+      )
+    new Settings[T](settings, ev.annotations)
+  }
+
+  def validate(settings: List[Setting]): Seq[String] = {
+    val map = new mutable.HashMap[String, Setting]
+    val res = Seq.newBuilder[String]
+    settings.foreach { x =>
+      val y = map.getOrElseUpdate(x.name, x)
+      if (y ne x) res += s"Multiple fields with name: '${x.name}'"
+    }
+    settings.foreach { x =>
+      x.extraNames.foreach { name =>
+        val y = map.getOrElseUpdate(name, x)
+        if (y ne x)
+          res += s"Extra name ($name) for '${x.name}' conflicts '${y.name}'"
+      }
+    }
+    settings.foreach { x =>
+      x.deprecatedNames.foreach { dn =>
+        val y = map.getOrElseUpdate(dn.name, x)
+        if (y ne x)
+          res += s"Deprecated name (${dn.name}) for '${x.name}' conflicts '${y.name}'"
+      }
+    }
+    res.result()
+  }
+
+  @inline def validate(settings: Settings[_]): Seq[String] =
+    validate(settings.settings)
+
 }

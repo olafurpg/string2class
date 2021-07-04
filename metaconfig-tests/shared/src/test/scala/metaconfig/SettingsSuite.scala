@@ -3,9 +3,13 @@ package metaconfig
 import metaconfig.annotation.Deprecated
 import metaconfig.annotation.DeprecatedName
 import metaconfig.annotation.ExtraName
+import metaconfig.generic.Setting
 import metaconfig.generic.Settings
+import metaconfig.generic.Surface
 
 class SettingsSuite extends munit.FunSuite {
+
+  import SettingsSuite._
 
   case class ToString(@ExtraName("extra") name: String)
   test(".toString") {
@@ -85,4 +89,49 @@ class SettingsSuite extends munit.FunSuite {
         |""".stripMargin
     )
   }
+
+  test("overlapping names") {
+    def asList(x: Surface[_]) = x.fields.flatten.map(new Setting(_))
+    val foo = asList(generic.deriveSurface[Foo])
+
+    assertEquals(
+      Settings.validate(foo ::: asList(generic.deriveSurface[FooFoo])),
+      Seq("Multiple fields with name: 'foo'")
+    )
+    assertEquals(
+      Settings.validate(foo ::: asList(generic.deriveSurface[BarFoo])),
+      Seq("Extra name (foo) for 'bar' conflicts 'foo'")
+    )
+    assertEquals(
+      Settings.validate(foo ::: asList(generic.deriveSurface[BazFoo])),
+      Seq("Deprecated name (foo) for 'baz' conflicts 'foo'")
+    )
+  }
+
+}
+
+object SettingsSuite {
+
+  case class Foo(
+      foo: Int
+  )
+
+  case class FooFoo(
+      @ExtraName("efoo")
+      @DeprecatedName("dfoo", "", "")
+      foo: Int
+  )
+
+  case class BarFoo(
+      @ExtraName("foo")
+      @ExtraName("efoo")
+      bar: Int
+  )
+
+  case class BazFoo(
+      @DeprecatedName("foo", "", "")
+      @DeprecatedName("dfoo", "", "")
+      baz: Int
+  )
+
 }
